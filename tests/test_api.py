@@ -52,6 +52,7 @@ def test_save_score_persists_csv() -> None:
                     "subject_id": "SUBJ_001",
                     "video_name": "positive_1.mp4",
                     "start_time": "E202604091935251282",
+                    "end_time": "E202604091940251283",
                     "valence": 5,
                     "arousal": 4,
                 },
@@ -59,8 +60,8 @@ def test_save_score_persists_csv() -> None:
 
         assert response.status_code == 200
         csv_text = (runtime_root / "data" / "offline_records.csv").read_text(encoding="utf-8-sig")
-        assert "subject_id,video_name,category,start_time,valence,arousal,saved_at" in csv_text
-        assert "SUBJ_001,positive_1.mp4,positive,E202604091935251282,5,4" in csv_text
+        assert "subject_id,video_name,category,start_time,end_time,valence,arousal,saved_at" in csv_text
+        assert "SUBJ_001,positive_1.mp4,positive,E202604091935251282,E202604091940251283,5,4" in csv_text
     finally:
         cleanup_runtime_root(runtime_root)
 
@@ -77,6 +78,7 @@ def test_save_score_rejects_invalid_payload() -> None:
                     "subject_id": "",
                     "video_name": "positive_1.mp4",
                     "start_time": "bad",
+                    "end_time": "bad",
                     "valence": 9,
                     "arousal": 0,
                 },
@@ -97,6 +99,7 @@ def test_save_score_rejects_unknown_video() -> None:
                     "subject_id": "SUBJ_001",
                     "video_name": "positive_1.mp4",
                     "start_time": "E202604091935251282",
+                    "end_time": "E202604091940251283",
                     "valence": 5,
                     "arousal": 4,
                 },
@@ -132,3 +135,6 @@ def test_live_frame_broadcasts_to_websocket() -> None:
         assert payload["source"] == "live"
     finally:
         cleanup_runtime_root(runtime_root)
+
+
+

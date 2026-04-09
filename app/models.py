@@ -19,6 +19,7 @@ class SaveScoreRequest(BaseModel):
     subject_id: str = Field(..., min_length=1, max_length=64, pattern=SUBJECT_ID_PATTERN)
     video_name: str = Field(..., pattern=VIDEO_NAME_PATTERN)
     start_time: str = Field(..., pattern=TIMESTAMP_PATTERN)
+    end_time: str = Field(..., pattern=TIMESTAMP_PATTERN)
     valence: int = Field(..., ge=1, le=5)
     arousal: int = Field(..., ge=1, le=5)
 
@@ -41,3 +42,4 @@ class EmotionModeRequest(BaseModel):
 
 class EmotionModeResponse(BaseModel):
     mode: Literal["mock", "live"]
+

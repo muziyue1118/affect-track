@@ -6,6 +6,7 @@
         currentIndex: -1,
         currentVideo: null,
         currentStartTime: "",
+        currentEndTime: "",
         isSaving: false,
         touched: {
             valence: false,
@@ -30,6 +31,7 @@
         metaSubject: document.getElementById("meta-subject"),
         metaVideo: document.getElementById("meta-video"),
         metaStartTime: document.getElementById("meta-start-time"),
+        metaEndTime: document.getElementById("meta-end-time"),
         scoreVideoCaption: document.getElementById("score-video-caption"),
         progressPill: document.getElementById("progress-pill"),
         valenceRange: document.getElementById("valence-range"),
@@ -159,12 +161,14 @@
 
         state.currentVideo = state.queue[state.currentIndex];
         state.currentStartTime = "";
+        state.currentEndTime = "";
         resetScoringControls();
         activateState(ui.playbackState);
 
         ui.metaSubject.textContent = state.subjectId;
         ui.metaVideo.textContent = state.currentVideo.name;
         ui.metaStartTime.textContent = "等待播放";
+        ui.metaEndTime.textContent = "等待播放结束";
         ui.scoreVideoCaption.textContent = `当前视频：${state.currentVideo.name}`;
         ui.progressPill.textContent = `第 ${state.currentIndex + 1} / ${state.queue.length} 段`;
         setStatus(`正在准备播放第 ${state.currentIndex + 1} 段视频。`, "info");
@@ -228,12 +232,14 @@
     }
 
     function handleVideoEnded() {
+        state.currentEndTime = generateExperimentTimestamp();
+        ui.metaEndTime.textContent = state.currentEndTime;
         activateState(ui.scoringState);
         setStatus(`视频 ${state.currentVideo.name} 播放结束，请完成评分。`, "info");
     }
 
     async function submitScore() {
-        if (!state.currentVideo || !state.currentStartTime || state.isSaving) {
+        if (!state.currentVideo || !state.currentStartTime || !state.currentEndTime || state.isSaving) {
             return;
         }
 
@@ -250,6 +256,7 @@
             subject_id: state.subjectId,
             video_name: state.currentVideo.name,
             start_time: state.currentStartTime,
+            end_time: state.currentEndTime,
             valence: Number(ui.valenceRange.value),
             arousal: Number(ui.arousalRange.value),
         };
@@ -306,3 +313,10 @@
     document.addEventListener("keydown", handlePlaybackKeys, { passive: false });
     window.addEventListener("beforeunload", handleBeforeUnload);
 })();
+
+
+
+
+
+
+

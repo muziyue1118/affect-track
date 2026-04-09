@@ -45,6 +45,7 @@ def test_csv_store_creates_header_and_appends() -> None:
             subject_id="SUBJ_001",
             video_name="positive_1.mp4",
             start_time="E202604091935251282",
+            end_time="E202604091940251283",
             valence=4,
             arousal=3,
         )
@@ -58,6 +59,7 @@ def test_csv_store_creates_header_and_appends() -> None:
         assert len(rows) == 2
         assert rows[0]["subject_id"] == "SUBJ_001"
         assert rows[0]["category"] == "positive"
+        assert rows[0]["end_time"] == "E202604091940251283"
     finally:
         cleanup_sandbox(root)
 
@@ -70,6 +72,7 @@ def test_csv_store_is_thread_safe() -> None:
             subject_id="SUBJ_001",
             video_name="positive_1.mp4",
             start_time="E202604091935251282",
+            end_time="E202604091940251283",
             valence=4,
             arousal=3,
         )
@@ -86,3 +89,5 @@ def test_csv_store_is_thread_safe() -> None:
         assert len(rows) == 20
     finally:
         cleanup_sandbox(root)
+
+

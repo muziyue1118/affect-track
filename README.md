@@ -56,6 +56,7 @@ uvicorn app.main:app --reload
   "subject_id": "SUBJ_001",
   "video_name": "positive_1.mp4",
   "start_time": "E202604091935251282",
+  "end_time": "E202604091940251283",
   "valence": 4,
   "arousal": 3
 }
@@ -86,6 +87,8 @@ pytest
 
 ## 说明
 
-- 离线采集端在每个视频结束后立即保存评分，避免中途退出导致全部数据丢失。
+- 离线采集端会记录每段视频的开始时间和结束时间，并在视频结束后立即保存评分，避免中途退出导致全部数据丢失。
 - 前端时间戳使用 `E + YYYYMMDDHHMMSS + 4位子秒标记` 生成；后端保留 Python 版本生成函数作为格式校验基准。
 - 在线演示页只消费 `/ws/emotion_stream`，未来模型协议变化时建议只改后端适配层。
+
+

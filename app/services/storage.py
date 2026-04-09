@@ -11,6 +11,7 @@ CSV_HEADERS = [
     "video_name",
     "category",
     "start_time",
+    "end_time",
     "valence",
     "arousal",
     "saved_at",
@@ -30,6 +31,7 @@ class CSVScoreStore:
             "video_name": payload.video_name,
             "category": category,
             "start_time": payload.start_time,
+            "end_time": payload.end_time,
             "valence": payload.valence,
             "arousal": payload.arousal,
             "saved_at": saved_at,
@@ -42,3 +44,5 @@ class CSVScoreStore:
                     writer.writeheader()
                 writer.writerow(row)
         return saved_at
+
+
