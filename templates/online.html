@@ -1,0 +1,109 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }}</title>
+    <link rel="stylesheet" href="/static/css/common.css">
+    <link rel="stylesheet" href="/static/css/online.css">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="brand-panel">
+            <div>
+                <div class="brand-mark">Realtime Demo</div>
+                <h1 class="brand-title">在线情绪演示面板</h1>
+                <p class="brand-copy">左侧播放视频，右侧以时间序列和二维情感空间同步显示 valence 与 arousal 的实时变化。</p>
+            </div>
+            <div class="pill-row">
+                <span class="status-pill">10Hz 更新</span>
+                <span class="status-pill">WebSocket 广播</span>
+                <span class="status-pill">Mock / Live 双模式</span>
+            </div>
+            <ol class="brand-list">
+                <li>`mock` 模式由后端自动生成平滑示例数据。</li>
+                <li>`live` 模式等待模型进程向 `/api/emotion_frame` 提交实时帧。</li>
+                <li>浏览器始终只连接 `/ws/emotion_stream`，后续替换模型时无需改前端。</li>
+            </ol>
+            <p class="meta-copy">当前页面优先用于演示与联调，不会写入离线评分数据。</p>
+        </aside>
+
+        <main class="workspace-panel">
+            <header class="panel-header">
+                <div>
+                    <h2 class="panel-title">实时情绪可视化</h2>
+                    <p class="panel-subtitle">推荐在完成离线采集与模型训练后接入 `live` 模式；第一版已经预留了 HTTP 推送入口。</p>
+                </div>
+                <div class="pill-row">
+                    <a class="ghost-button" href="/offline">返回离线采集</a>
+                </div>
+            </header>
+
+            <div class="status-banner" id="demo-status" data-tone="info">
+                <strong>连接状态</strong>
+                <span id="demo-status-text">正在初始化在线演示页面。</span>
+            </div>
+
+            <section class="online-layout">
+                <div class="media-column">
+                    <article class="player-card">
+                        <div class="demo-player">
+                            <video id="demo-video" playsinline preload="auto"></video>
+                        </div>
+                    </article>
+                    <article class="info-card">
+                        <div class="mode-row">
+                            <button id="mode-mock" class="secondary-button mode-button is-active" type="button">Mock 数据流</button>
+                            <button id="mode-live" class="secondary-button mode-button" type="button">Live 数据流</button>
+                            <span class="metric-pill" id="active-mode-pill">当前模式：mock</span>
+                        </div>
+                        <div class="control-row" style="margin-top: 14px;">
+                            <select id="video-select" class="video-select" aria-label="在线演示视频选择"></select>
+                            <button id="play-toggle" class="ghost-button" type="button">暂停</button>
+                            <button id="next-video" class="secondary-button" type="button">下一段视频</button>
+                        </div>
+                    </article>
+                </div>
+
+                <div class="analytics-column">
+                    <article class="info-card">
+                        <div class="reading-grid">
+                            <div class="reading-box">
+                                <p>Valence</p>
+                                <strong id="valence-readout">--</strong>
+                            </div>
+                            <div class="reading-box">
+                                <p>Arousal</p>
+                                <strong id="arousal-readout">--</strong>
+                            </div>
+                        </div>
+                        <div class="metric-row" style="margin-top: 14px;">
+                            <span class="metric-pill" id="stream-pill">WebSocket 未连接</span>
+                            <span class="metric-pill" id="video-pill">当前视频：-</span>
+                        </div>
+                    </article>
+
+                    <article class="chart-card">
+                        <div class="chart-header">
+                            <h3>最近 30 秒情绪曲线</h3>
+                            <span class="chart-subtitle">Valence / Arousal 双折线</span>
+                        </div>
+                        <div id="line-chart" class="chart-surface"></div>
+                    </article>
+
+                    <article class="chart-card">
+                        <div class="chart-header">
+                            <h3>情感二维坐标</h3>
+                            <span class="chart-subtitle">单点平滑移动，中心参考点 (3, 3)</span>
+                        </div>
+                        <div id="scatter-chart" class="chart-surface"></div>
+                    </article>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/vendor/echarts.min.js"></script>
+    <script src="/static/js/online.js" defer></script>
+</body>
+</html>

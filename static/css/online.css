@@ -1,0 +1,139 @@
+﻿.online-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.25fr) minmax(320px, 0.95fr);
+    gap: 20px;
+    min-width: 0;
+}
+
+.media-column,
+.analytics-column {
+    display: grid;
+    gap: 18px;
+    min-width: 0;
+}
+
+.player-card {
+    padding: 18px;
+}
+
+.demo-player {
+    position: relative;
+    overflow: hidden;
+    border-radius: 22px;
+    background:
+        radial-gradient(circle at top right, rgba(217, 162, 45, 0.18), transparent 26%),
+        linear-gradient(180deg, #0d1d2b, #17324a);
+    min-height: 56vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+#demo-video {
+    width: 100%;
+    max-height: 72vh;
+    border-radius: 18px;
+    object-fit: contain;
+    background: #06111b;
+}
+
+.control-row,
+.mode-row,
+.metric-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+}
+
+.video-select {
+    min-width: 220px;
+    min-height: 46px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid rgba(16, 32, 48, 0.12);
+    background: rgba(255, 255, 255, 0.92);
+}
+
+.info-card,
+.chart-card {
+    padding: 18px;
+}
+
+.reading-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.reading-box {
+    padding: 18px;
+    border-radius: 20px;
+    background: rgba(16, 32, 48, 0.05);
+    border: 1px solid rgba(16, 32, 48, 0.08);
+}
+
+.reading-box p {
+    margin: 0;
+}
+
+.reading-box strong {
+    display: block;
+    margin-top: 10px;
+    font-size: 34px;
+}
+
+.chart-card {
+    min-height: 310px;
+    display: grid;
+    gap: 14px;
+}
+
+.chart-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+}
+
+.chart-header h3 {
+    margin: 0;
+    font-size: 22px;
+}
+
+.chart-subtitle {
+    color: var(--text-soft);
+    font-size: 14px;
+}
+
+.chart-surface {
+    min-height: 240px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(245, 250, 255, 0.9), rgba(239, 245, 248, 0.9));
+}
+
+.empty-state {
+    display: grid;
+    place-items: center;
+    color: var(--text-soft);
+    text-align: center;
+    padding: 24px;
+}
+
+.mode-button.is-active {
+    color: #fff8f0;
+    background: linear-gradient(120deg, #d9734e, #ef6f55);
+    box-shadow: 0 14px 30px rgba(239, 111, 85, 0.24);
+}
+
+@media (max-width: 1100px) {
+    .online-layout {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 760px) {
+    .reading-grid {
+        grid-template-columns: 1fr;
+    }
+}

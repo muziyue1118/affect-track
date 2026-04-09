@@ -1,0 +1,6 @@
+__pycache__/
+.pytest_cache/
+.pytest_tmp/
+tests/.runtime/
+*.pyc
+data/offline_records.csv

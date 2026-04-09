@@ -1,0 +1,207 @@
+﻿<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ page_title }}</title>
+    <link rel="stylesheet" href="/static/css/common.css">
+    <link rel="stylesheet" href="/static/css/offline.css">
+</head>
+<body>
+    <div class="app-shell">
+        <aside class="brand-panel">
+            <div>
+                <div class="brand-mark">Emotion Capture</div>
+                <h1 class="brand-title">离线情绪采集工作台</h1>
+                <p class="brand-copy">顺序播放实验视频，并在每次播放结束后立即记录受试者对 valence 与 arousal 的主观评分。</p>
+            </div>
+            <div class="pill-row">
+                <span class="status-pill">严格状态机</span>
+                <span class="status-pill">逐条落盘</span>
+                <span class="status-pill">本机单机运行</span>
+            </div>
+            <ol class="brand-list">
+                <li>输入受试者编号并启动实验。</li>
+                <li>前端拉取视频列表并随机打乱顺序。</li>
+                <li>每个视频播放后完成双维度评分并立即保存。</li>
+                <li>全部视频完成后退出全屏并显示结束提示。</li>
+            </ol>
+            <p class="meta-copy">当前系统只识别 `positive_1.mp4`、`neutral_1.mp4`、`negative_1.mp4` 这类命名规范。</p>
+        </aside>
+
+        <main class="workspace-panel">
+            <header class="panel-header">
+                <div>
+                    <h2 class="panel-title">实验控制台</h2>
+                    <p class="panel-subtitle">界面会根据实验阶段自动切换，播放中默认屏蔽视频控制条和常见快捷键。</p>
+                </div>
+                <div class="pill-row">
+                    <a class="ghost-button" href="/online">前往在线演示</a>
+                </div>
+            </header>
+
+            <div class="status-banner" id="status-banner" data-tone="info">
+                <strong>状态</strong>
+                <span id="status-text">等待输入受试者编号并开始实验。</span>
+            </div>
+
+            <section class="state-panel is-active" id="state-login">
+                <div class="login-grid">
+                    <article class="info-card login-card">
+                        <h3>登录与初始化</h3>
+                        <p class="panel-subtitle">点击开始后会从后端获取合规视频列表，并在前端生成随机播放队列。</p>
+                        <form id="subject-form" class="form-stack">
+                            <label for="subject-id" class="field-label">受试者编号 Subject ID</label>
+                            <input id="subject-id" name="subject-id" class="text-input" type="text" maxlength="64" autocomplete="off" placeholder="例如 SUBJ_001" required>
+                            <p class="input-help">允许字母、数字、下划线和连字符。为了避免混淆，建议实验员现场确认唯一编号后再开始。</p>
+                            <button id="start-button" class="primary-button" type="submit">开始实验</button>
+                        </form>
+                    </article>
+                    <article class="info-card support-card">
+                        <h3>运行提醒</h3>
+                        <div class="card-grid">
+                            <div class="meta-card">
+                                <p class="meta-label">视频命名</p>
+                                <p class="meta-value">positive / neutral / negative</p>
+                            </div>
+                            <div class="meta-card">
+                                <p class="meta-label">评分范围</p>
+                                <p class="meta-value">1 到 5 的整数</p>
+                            </div>
+                            <div class="meta-card">
+                                <p class="meta-label">保存策略</p>
+                                <p class="meta-value">每个视频后立即写入 CSV</p>
+                            </div>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="state-panel" id="state-playback">
+                <div class="video-shell">
+                    <article class="player-card">
+                        <div class="player-stage">
+                            <video id="experiment-video" playsinline preload="auto" controlslist="nodownload noplaybackrate noremoteplayback" disablepictureinpicture></video>
+                            <div class="player-overlay">
+                                <button id="manual-play-button" class="secondary-button" type="button" hidden>点击开始播放</button>
+                            </div>
+                        </div>
+                    </article>
+                    <div class="meta-grid">
+                        <article class="meta-card">
+                            <p class="meta-label">当前受试者</p>
+                            <p class="meta-value" id="meta-subject">-</p>
+                        </article>
+                        <article class="meta-card">
+                            <p class="meta-label">当前视频</p>
+                            <p class="meta-value" id="meta-video">-</p>
+                        </article>
+                        <article class="meta-card">
+                            <p class="meta-label">播放开始时间</p>
+                            <p class="meta-value" id="meta-start-time">等待播放</p>
+                        </article>
+                    </div>
+                </div>
+            </section>
+
+            <section class="state-panel" id="state-scoring">
+                <div class="score-layout">
+                    <article class="score-card">
+                        <div class="score-header">
+                            <div>
+                                <h3 class="score-title">请对刚才观看的视频进行评分</h3>
+                                <p class="score-caption" id="score-video-caption">当前视频：-</p>
+                            </div>
+                            <div class="range-value is-pending" id="progress-pill">等待评分</div>
+                        </div>
+
+                        <div class="card-grid">
+                            <section>
+                                <div class="score-header">
+                                    <div>
+                                        <h4 class="score-title">Valence / 愉悦度</h4>
+                                        <p class="score-caption">请根据主观感受判断刚才视频带来的消极到积极程度。</p>
+                                    </div>
+                                    <div class="range-value is-pending" id="valence-value">未选择</div>
+                                </div>
+                                <div class="scale-shell">
+                                    <div class="scale-anchor">
+                                        <strong>😭 消极</strong>
+                                        <span>1 分</span>
+                                    </div>
+                                    <div class="scale-core">
+                                        <div class="range-track">
+                                            <input id="valence-range" type="range" min="1" max="5" step="1" value="3" aria-label="Valence 评分">
+                                        </div>
+                                        <div class="scale-ticks"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div>
+                                    </div>
+                                    <div class="scale-anchor">
+                                        <strong>🤩 积极</strong>
+                                        <span>5 分</span>
+                                    </div>
+                                </div>
+                            </section>
+
+                            <section>
+                                <div class="score-header">
+                                    <div>
+                                        <h4 class="score-title">Arousal / 唤醒度</h4>
+                                        <p class="score-caption">请根据主观感受判断刚才视频带来的平静到激动程度。</p>
+                                    </div>
+                                    <div class="range-value is-pending" id="arousal-value">未选择</div>
+                                </div>
+                                <div class="scale-shell">
+                                    <div class="scale-anchor">
+                                        <strong>😴 平静</strong>
+                                        <span>1 分</span>
+                                    </div>
+                                    <div class="scale-core">
+                                        <div class="range-track">
+                                            <input id="arousal-range" type="range" min="1" max="5" step="1" value="3" aria-label="Arousal 评分">
+                                        </div>
+                                        <div class="scale-ticks"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div>
+                                    </div>
+                                    <div class="scale-anchor">
+                                        <strong>🤯 激动</strong>
+                                        <span>5 分</span>
+                                    </div>
+                                </div>
+                            </section>
+                        </div>
+
+                        <div class="score-actions">
+                            <p class="progress-copy" id="score-progress-copy">完成评分后才会进入下一段视频。</p>
+                            <button id="submit-score-button" class="primary-button" type="button" disabled>提交并继续</button>
+                        </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="state-panel" id="state-complete">
+                <div class="finish-grid">
+                    <article class="summary-card finish-card">
+                        <h3 class="finish-title">实验结束</h3>
+                        <p class="finish-copy">所有视频已经播放并完成评分，系统已退出全屏模式。请由实验员确认记录完成后关闭页面或开始下一位受试者。</p>
+                        <div class="pill-row">
+                            <a class="secondary-button" href="/offline">返回登录页</a>
+                            <a class="ghost-button" href="/online">打开在线演示</a>
+                        </div>
+                    </article>
+                    <aside class="summary-card finish-card finish-highlight">
+                        <div class="finish-stat">
+                            已完成视频数
+                            <strong id="complete-count">0</strong>
+                        </div>
+                        <div class="finish-stat">
+                            受试者编号
+                            <strong id="complete-subject">-</strong>
+                        </div>
+                    </aside>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <script src="/static/js/offline.js" defer></script>
+</body>
+</html>
