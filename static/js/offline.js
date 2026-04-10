@@ -8,6 +8,8 @@
         currentStartTime: "",
         currentEndTime: "",
         isSaving: false,
+        restCountdownSeconds: 10,
+        restTimerId: null,
         touched: {
             valence: false,
             arousal: false,
@@ -22,6 +24,7 @@
         loginState: document.getElementById("state-login"),
         playbackState: document.getElementById("state-playback"),
         scoringState: document.getElementById("state-scoring"),
+        restState: document.getElementById("state-rest"),
         completeState: document.getElementById("state-complete"),
         subjectForm: document.getElementById("subject-form"),
         subjectIdInput: document.getElementById("subject-id"),
@@ -40,6 +43,7 @@
         arousalValue: document.getElementById("arousal-value"),
         submitButton: document.getElementById("submit-score-button"),
         scoreProgressCopy: document.getElementById("score-progress-copy"),
+        restCountdown: document.getElementById("rest-countdown"),
         completeCount: document.getElementById("complete-count"),
         completeSubject: document.getElementById("complete-subject"),
     };
@@ -49,10 +53,22 @@
         ui.statusText.textContent = message;
     }
 
+    function clearRestTimer() {
+        if (state.restTimerId !== null) {
+            window.clearInterval(state.restTimerId);
+            state.restTimerId = null;
+        }
+    }
+
+    function setPlaybackImmersive(enabled) {
+        document.body.classList.toggle("is-playback-immersive", enabled);
+    }
+
     function activateState(target) {
-        [ui.loginState, ui.playbackState, ui.scoringState, ui.completeState].forEach((section) => {
+        [ui.loginState, ui.playbackState, ui.scoringState, ui.restState, ui.completeState].forEach((section) => {
             section.classList.toggle("is-active", section === target);
         });
+        setPlaybackImmersive(target === ui.playbackState);
     }
 
     function pad(value, size = 2) {
@@ -130,7 +146,7 @@
         ui.progressPill.textContent = ready ? "可提交" : `第 ${state.currentIndex + 1} / ${state.queue.length} 段`;
         ui.progressPill.classList.toggle("is-pending", !ready);
         ui.scoreProgressCopy.textContent = ready
-            ? "评分就绪，提交后会立即写入 CSV 并进入下一段视频。"
+            ? "评分就绪，提交后会立即写入 CSV 并进入休息阶段。"
             : "请先完成两个维度的评分，按钮才会解锁。";
     }
 
@@ -143,6 +159,7 @@
     }
 
     async function attemptPlayback() {
+        await requestFullscreen();
         ui.manualPlayButton.hidden = true;
         try {
             await ui.experimentVideo.play();
@@ -153,6 +170,7 @@
     }
 
     async function startNextVideo() {
+        clearRestTimer();
         state.currentIndex += 1;
         if (state.currentIndex >= state.queue.length) {
             await finishExperiment();
@@ -182,6 +200,7 @@
     }
 
     async function finishExperiment() {
+        clearRestTimer();
         await exitFullscreen();
         activateState(ui.completeState);
         ui.completeCount.textContent = String(state.queue.length);
@@ -201,6 +220,7 @@
         state.currentIndex = -1;
         state.currentVideo = null;
         state.isSaving = false;
+        clearRestTimer();
         ui.startButton.disabled = true;
         setStatus("正在加载视频列表并生成随机播放队列。", "info");
 
@@ -236,6 +256,24 @@
         ui.metaEndTime.textContent = state.currentEndTime;
         activateState(ui.scoringState);
         setStatus(`视频 ${state.currentVideo.name} 播放结束，请完成评分。`, "info");
+    }
+
+    function startRestPeriod() {
+        clearRestTimer();
+        state.restCountdownSeconds = 10;
+        ui.restCountdown.textContent = String(state.restCountdownSeconds);
+        activateState(ui.restState);
+        setStatus("评分已保存，请稍作休息。", "success");
+
+        state.restTimerId = window.setInterval(async () => {
+            state.restCountdownSeconds -= 1;
+            ui.restCountdown.textContent = String(state.restCountdownSeconds);
+
+            if (state.restCountdownSeconds <= 0) {
+                clearRestTimer();
+                await startNextVideo();
+            }
+        }, 1000);
     }
 
     async function submitScore() {
@@ -275,9 +313,15 @@
                 throw new Error(errorBody.detail || "保存失败，请重试。");
             }
 
-            setStatus(`已保存 ${state.currentVideo.name} 的评分记录。`, "success");
             state.isSaving = false;
-            await startNextVideo();
+            ui.submitButton.textContent = "提交并继续";
+
+            if (state.currentIndex >= state.queue.length - 1) {
+                await finishExperiment();
+                return;
+            }
+
+            startRestPeriod();
         } catch (error) {
             state.isSaving = false;
             ui.submitButton.textContent = "提交并继续";
@@ -287,7 +331,10 @@
     }
 
     function handleBeforeUnload(event) {
-        const activeExperiment = state.subjectId && state.currentIndex >= 0 && state.currentIndex < state.queue.length;
+        const activeExperiment = state.subjectId
+            && !ui.completeState.classList.contains("is-active")
+            && state.currentIndex >= 0
+            && state.currentIndex < state.queue.length;
         if (activeExperiment) {
             event.preventDefault();
             event.returnValue = "";
@@ -313,10 +360,3 @@
     document.addEventListener("keydown", handlePlaybackKeys, { passive: false });
     window.addEventListener("beforeunload", handleBeforeUnload);
 })();
-
-
-
-
-
-
-

@@ -137,7 +137,7 @@
                                         <div class="range-track">
                                             <input id="valence-range" type="range" min="1" max="5" step="1" value="3" aria-label="Valence 评分">
                                         </div>
-                                        <div class="scale-ticks"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div>
+                                        <div class="scale-ticks" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div>
                                     </div>
                                     <div class="scale-anchor">
                                         <strong>🤩 积极</strong>
@@ -163,7 +163,7 @@
                                         <div class="range-track">
                                             <input id="arousal-range" type="range" min="1" max="5" step="1" value="3" aria-label="Arousal 评分">
                                         </div>
-                                        <div class="scale-ticks"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div>
+                                        <div class="scale-ticks" aria-hidden="true"><span>1</span><span>2</span><span>3</span><span>4</span><span>5</span></div>
                                     </div>
                                     <div class="scale-anchor">
                                         <strong>🤯 激动</strong>
@@ -177,6 +177,18 @@
                             <p class="progress-copy" id="score-progress-copy">完成评分后才会进入下一段视频。</p>
                             <button id="submit-score-button" class="primary-button" type="button" disabled>提交并继续</button>
                         </div>
+                    </article>
+                </div>
+            </section>
+
+            <section class="state-panel" id="state-rest">
+                <div class="rest-layout">
+                    <article class="summary-card rest-card">
+                        <div class="rest-chip">休息时间</div>
+                        <h3 class="rest-title">请稍作休息</h3>
+                        <p class="rest-copy">上一段视频评分已保存。下一段视频即将开始，请放松一下，保持自然状态。</p>
+                        <div class="rest-countdown" id="rest-countdown">10</div>
+                        <p class="rest-caption">秒后自动进入下一段视频</p>
                     </article>
                 </div>
             </section>
@@ -209,4 +221,3 @@
     <script src="/static/js/offline.js" defer></script>
 </body>
 </html>
-

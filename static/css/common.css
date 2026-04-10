@@ -212,6 +212,39 @@ button:disabled {
     display: block;
 }
 
+body.is-playback-immersive {
+    background: #040a11;
+    overflow: hidden;
+}
+
+body.is-playback-immersive .app-shell {
+    display: block;
+    min-height: 100vh;
+    padding: 0;
+    gap: 0;
+}
+
+body.is-playback-immersive .brand-panel {
+    display: none;
+}
+
+body.is-playback-immersive .workspace-panel {
+    position: fixed;
+    inset: 0;
+    min-height: 100vh;
+    padding: 0;
+    gap: 0;
+    border-radius: 0;
+    border: none;
+    box-shadow: none;
+    background: #040a11;
+}
+
+body.is-playback-immersive .panel-header,
+body.is-playback-immersive .status-banner {
+    display: none;
+}
+
 .primary-button,
 .secondary-button,
 .ghost-button {
@@ -289,3 +322,4 @@ button:disabled {
         flex-direction: column;
     }
 }
+
