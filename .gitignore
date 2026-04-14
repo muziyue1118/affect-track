@@ -3,4 +3,5 @@ __pycache__/
 .pytest_tmp/
 tests/.runtime/
 *.pyc
-data/offline_records.csv
+
+/video
