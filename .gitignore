@@ -4,3 +4,7 @@ __pycache__/
 tests/.runtime/
 *.pyc
 data/offline_records.csv
+data/eeg_data/
+outputs/
+*.fif
+*.joblib

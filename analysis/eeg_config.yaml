@@ -1,0 +1,45 @@
+data_dir: data/eeg_data
+labels_csv: data/offline_records.csv
+output_dir: outputs/eeg_runs
+random_seed: 42
+
+preprocessing:
+  resample_hz: 200
+  notch_hz: 50
+  bandpass_hz: [1, 45]
+  reference: average
+  montage: standard_1020
+  reject_amplitude_uv: 150
+  run_ica: false
+
+segmentation:
+  trim_start_s: 30
+  trim_end_s: 10
+  duration_s: full
+  min_trial_s: 60
+  window_s: 4
+  window_overlap_s: 0
+
+features:
+  bands:
+    delta: [1, 4]
+    theta: [4, 8]
+    alpha: [8, 14]
+    beta: [14, 31]
+    gamma: [31, 45]
+
+evaluation:
+  primary_task: category
+  secondary_tasks: [valence_binary, arousal_binary]
+  split_mode: loso
+  tune_hyperparameters: false
+  class_labels: [negative, neutral, positive]
+
+models:
+  feature_models: [logistic_regression, linear_svm, rbf_svm, random_forest]
+  deep_models: [shallow_convnet]
+  deep_epochs: 80
+  deep_batch_size: 32
+  deep_learning_rate: 0.001
+  deep_patience: 10
+  deep_device: auto

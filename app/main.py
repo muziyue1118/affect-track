@@ -18,6 +18,7 @@ from app.models import (
     VideoItem,
 )
 from app.services.emotion_stream import EmotionStreamHub, run_mock_stream
+from app.services.online_eeg import OnlineEmotionService
 from app.services.storage import CSVScoreStore
 from app.services.video_catalog import VideoCatalog
 from app.utils.timestamps import generate_timestamp
@@ -53,11 +54,13 @@ def create_app(runtime_root: Path | None = None) -> FastAPI:
     runtime_root = runtime_root or PROJECT_ROOT
     data_dir = runtime_root / "data"
     video_dir = runtime_root / "video"
+    pics_dir = runtime_root / "pics"
     data_dir.mkdir(parents=True, exist_ok=True)
 
     catalog = VideoCatalog(video_dir)
     score_store = CSVScoreStore(data_dir / "offline_records.csv")
     stream_hub = EmotionStreamHub()
+    online_eeg = OnlineEmotionService(project_root=runtime_root, stream_hub=stream_hub)
     templates = Jinja2Templates(directory=str(TEMPLATES_DIR))
     logger = logging.getLogger("emotion-app")
 
@@ -68,6 +71,7 @@ def create_app(runtime_root: Path | None = None) -> FastAPI:
         try:
             yield
         finally:
+            await online_eeg.stop()
             mock_task.cancel()
             with suppress(asyncio.CancelledError):
                 await mock_task
@@ -82,10 +86,12 @@ def create_app(runtime_root: Path | None = None) -> FastAPI:
     app.state.video_catalog = catalog
     app.state.score_store = score_store
     app.state.stream_hub = stream_hub
+    app.state.online_eeg = online_eeg
     app.state.logger = logger
 
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
     app.mount("/video", StaticFiles(directory=str(video_dir), check_dir=False), name="video")
+    app.mount("/pics", StaticFiles(directory=str(pics_dir), check_dir=False), name="pics")
 
     @app.get("/", include_in_schema=False)
     async def root() -> RedirectResponse:
@@ -113,6 +119,7 @@ def create_app(runtime_root: Path | None = None) -> FastAPI:
             "status": "ok",
             "timestamp": generate_timestamp(),
             "videos_available": len(catalog.list_videos()),
+            "online_eeg": online_eeg.snapshot(),
             **stream_hub.snapshot(),
         }
 
@@ -147,6 +154,21 @@ def create_app(runtime_root: Path | None = None) -> FastAPI:
         await stream_hub.publish(payload.model_dump(), source="live")
         logger.info("accepted live emotion frame")
         return {"status": "ok", "mode": stream_hub.mode}
+
+    @app.post("/api/online_eeg/start")
+    async def start_online_eeg() -> dict:
+        status = await online_eeg.start()
+        if status["running"]:
+            await stream_hub.set_mode("live")
+        return status
+
+    @app.post("/api/online_eeg/stop")
+    async def stop_online_eeg() -> dict:
+        return await online_eeg.stop()
+
+    @app.get("/api/online_eeg/status")
+    async def online_eeg_status() -> dict:
+        return online_eeg.snapshot()
 
     @app.websocket("/ws/emotion_stream")
     async def emotion_stream(websocket: WebSocket) -> None:

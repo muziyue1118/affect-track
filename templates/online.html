@@ -55,6 +55,8 @@
                         <div class="mode-row">
                             <button id="mode-mock" class="secondary-button mode-button is-active" type="button">Mock 数据流</button>
                             <button id="mode-live" class="secondary-button mode-button" type="button">Live 数据流</button>
+                            <button id="start-eeg" class="secondary-button eeg-button" type="button">启动 EEG</button>
+                            <button id="stop-eeg" class="ghost-button eeg-button" type="button">停止 EEG</button>
                             <span class="metric-pill" id="active-mode-pill">当前模式：mock</span>
                         </div>
                         <div class="control-row" style="margin-top: 14px;">
@@ -67,19 +69,46 @@
 
                 <div class="analytics-column">
                     <article class="info-card">
-                        <div class="reading-grid">
-                            <div class="reading-box">
-                                <p>Valence</p>
-                                <strong id="valence-readout">--</strong>
-                            </div>
-                            <div class="reading-box">
-                                <p>Arousal</p>
-                                <strong id="arousal-readout">--</strong>
-                            </div>
+                        <div class="emotion-meter-stack">
+                            <section class="emotion-meter" data-kind="valence">
+                                <div class="emotion-meter__topline">
+                                    <span>Valence</span>
+                                    <strong id="valence-readout">--</strong>
+                                </div>
+                                <div class="emotion-meter__body">
+                                    <img class="emotion-meter__icon" src="/pics/不开心.png" alt="低愉悦度">
+                                    <div class="emotion-meter__track" aria-label="Valence progress">
+                                        <div id="valence-fill" class="emotion-meter__fill"></div>
+                                        <div id="valence-knob" class="emotion-meter__knob"></div>
+                                    </div>
+                                    <img class="emotion-meter__icon" src="/pics/开心.png" alt="高愉悦度">
+                                </div>
+                                <div class="emotion-meter__scale">
+                                    <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
+                                </div>
+                            </section>
+                            <section class="emotion-meter" data-kind="arousal">
+                                <div class="emotion-meter__topline">
+                                    <span>Arousal</span>
+                                    <strong id="arousal-readout">--</strong>
+                                </div>
+                                <div class="emotion-meter__body">
+                                    <img class="emotion-meter__icon" src="/pics/低唤醒.png" alt="低唤醒">
+                                    <div class="emotion-meter__track" aria-label="Arousal progress">
+                                        <div id="arousal-fill" class="emotion-meter__fill"></div>
+                                        <div id="arousal-knob" class="emotion-meter__knob"></div>
+                                    </div>
+                                    <img class="emotion-meter__icon" src="/pics/高唤醒.png" alt="高唤醒">
+                                </div>
+                                <div class="emotion-meter__scale">
+                                    <span>1</span><span>2</span><span>3</span><span>4</span><span>5</span>
+                                </div>
+                            </section>
                         </div>
                         <div class="metric-row" style="margin-top: 14px;">
                             <span class="metric-pill" id="stream-pill">WebSocket 未连接</span>
                             <span class="metric-pill" id="video-pill">当前视频：-</span>
+                            <span class="metric-pill" id="eeg-status-pill">EEG：未启动</span>
                         </div>
                     </article>
 

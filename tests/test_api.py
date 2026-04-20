@@ -137,4 +137,20 @@ def test_live_frame_broadcasts_to_websocket() -> None:
         cleanup_runtime_root(runtime_root)
 
 
+def test_online_eeg_status_and_start_without_models_is_safe() -> None:
+    runtime_root = make_runtime_root("online_eeg")
+    try:
+        with TestClient(create_app(runtime_root)) as client:
+            status_response = client.get("/api/online_eeg/status")
+            start_response = client.post("/api/online_eeg/start")
+
+        assert status_response.status_code == 200
+        assert status_response.json()["running"] is False
+        assert start_response.status_code == 200
+        assert start_response.json()["running"] is False
+        assert start_response.json()["status"] == "model_missing"
+    finally:
+        cleanup_runtime_root(runtime_root)
+
+
 

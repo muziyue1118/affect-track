@@ -5,6 +5,7 @@
         activeMode: "mock",
         socket: null,
         reconnectTimer: null,
+        eegStatusTimer: null,
         lineChart: null,
         scatterChart: null,
         series: [],
@@ -19,11 +20,18 @@
         nextVideo: document.getElementById("next-video"),
         modeMock: document.getElementById("mode-mock"),
         modeLive: document.getElementById("mode-live"),
+        startEeg: document.getElementById("start-eeg"),
+        stopEeg: document.getElementById("stop-eeg"),
         activeModePill: document.getElementById("active-mode-pill"),
         streamPill: document.getElementById("stream-pill"),
         videoPill: document.getElementById("video-pill"),
+        eegStatusPill: document.getElementById("eeg-status-pill"),
         valenceReadout: document.getElementById("valence-readout"),
         arousalReadout: document.getElementById("arousal-readout"),
+        valenceFill: document.getElementById("valence-fill"),
+        valenceKnob: document.getElementById("valence-knob"),
+        arousalFill: document.getElementById("arousal-fill"),
+        arousalKnob: document.getElementById("arousal-knob"),
         lineChart: document.getElementById("line-chart"),
         scatterChart: document.getElementById("scatter-chart"),
     };
@@ -243,9 +251,26 @@
         });
     }
 
+    function setMeter(kind, value) {
+        const numeric = Math.min(5, Math.max(1, Number(value)));
+        const percent = ((numeric - 1) / 4) * 100;
+        const fill = kind === "valence" ? ui.valenceFill : ui.arousalFill;
+        const knob = kind === "valence" ? ui.valenceKnob : ui.arousalKnob;
+        const root = fill?.closest(".emotion-meter");
+        root?.style.setProperty("--meter-percent", `${percent}%`);
+        if (fill) {
+            fill.style.width = `${percent}%`;
+        }
+        if (knob) {
+            knob.style.left = `${percent}%`;
+        }
+    }
+
     function updateReadout(frame) {
         ui.valenceReadout.textContent = Number(frame.valence).toFixed(2);
         ui.arousalReadout.textContent = Number(frame.arousal).toFixed(2);
+        setMeter("valence", frame.valence);
+        setMeter("arousal", frame.arousal);
         ui.streamPill.textContent = `WebSocket 已连接 · ${frame.source || state.activeMode}`;
         updateCharts(frame);
     }
@@ -302,8 +327,39 @@
         setStatus(payload.mode === "mock" ? "已切换到模拟情绪流。" : "已切换到 live 模式，等待模型推流。", "success");
     }
 
+    function renderEegStatus(status) {
+        const prefix = status.running ? "EEG：运行中" : status.model_ready ? "EEG：模型就绪" : "EEG：未就绪";
+        ui.eegStatusPill.textContent = `${prefix} · ${status.status || "unknown"}`;
+        ui.startEeg.disabled = Boolean(status.running);
+        ui.stopEeg.disabled = !status.running;
+    }
+
+    async function refreshEegStatus() {
+        try {
+            const status = await fetchJson("/api/online_eeg/status");
+            renderEegStatus(status);
+        } catch (_error) {
+            ui.eegStatusPill.textContent = "EEG：状态不可用";
+        }
+    }
+
+    async function startOnlineEeg() {
+        const status = await fetchJson("/api/online_eeg/start", { method: "POST" });
+        renderEegStatus(status);
+        await syncMode();
+        setStatus(status.running ? "EEG 在线推理已启动，正在等待有效窗口。" : status.message, status.running ? "success" : "warning");
+    }
+
+    async function stopOnlineEeg() {
+        const status = await fetchJson("/api/online_eeg/stop", { method: "POST" });
+        renderEegStatus(status);
+        setStatus("EEG 在线推理已停止。", "info");
+    }
+
     ui.modeMock.addEventListener("click", () => setMode("mock"));
     ui.modeLive.addEventListener("click", () => setMode("live"));
+    ui.startEeg.addEventListener("click", () => startOnlineEeg().catch((error) => setStatus(error.message, "error")));
+    ui.stopEeg.addEventListener("click", () => stopOnlineEeg().catch((error) => setStatus(error.message, "error")));
     ui.videoSelect.addEventListener("change", (event) => playVideoAt(Number(event.target.value)));
     ui.playToggle.addEventListener("click", async () => {
         if (ui.demoVideo.paused) {
@@ -320,8 +376,9 @@
     (async () => {
         initCharts();
         try {
-            await Promise.all([loadVideos(), syncMode()]);
+            await Promise.all([loadVideos(), syncMode(), refreshEegStatus()]);
             connectSocket();
+            state.eegStatusTimer = window.setInterval(refreshEegStatus, 2500);
             setStatus("在线演示页面已就绪。", "success");
         } catch (error) {
             setStatus(error.message || "在线演示初始化失败。", "error");
