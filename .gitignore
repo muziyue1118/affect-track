@@ -8,3 +8,4 @@ data/eeg_data/
 outputs/
 *.fif
 *.joblib
+/video
