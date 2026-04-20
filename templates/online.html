@@ -7,7 +7,7 @@
     <link rel="stylesheet" href="/static/css/common.css">
     <link rel="stylesheet" href="/static/css/online.css">
 </head>
-<body>
+<body class="online-page">
     <div class="app-shell">
         <aside class="brand-panel">
             <div>
@@ -64,15 +64,10 @@
                             <button id="play-toggle" class="ghost-button" type="button">暂停</button>
                             <button id="next-video" class="secondary-button" type="button">下一段视频</button>
                         </div>
-                    </article>
-                </div>
-
-                <div class="analytics-column">
-                    <article class="info-card">
                         <div class="emotion-meter-stack">
                             <section class="emotion-meter" data-kind="valence">
                                 <div class="emotion-meter__topline">
-                                    <span>Valence</span>
+                                    <span>Valence · 愉悦度</span>
                                     <strong id="valence-readout">--</strong>
                                 </div>
                                 <div class="emotion-meter__body">
@@ -89,7 +84,7 @@
                             </section>
                             <section class="emotion-meter" data-kind="arousal">
                                 <div class="emotion-meter__topline">
-                                    <span>Arousal</span>
+                                    <span>Arousal · 激活度</span>
                                     <strong id="arousal-readout">--</strong>
                                 </div>
                                 <div class="emotion-meter__body">
@@ -111,11 +106,13 @@
                             <span class="metric-pill" id="eeg-status-pill">EEG：未启动</span>
                         </div>
                     </article>
+                </div>
 
+                <div class="analytics-column">
                     <article class="chart-card">
                         <div class="chart-header">
                             <h3>最近 30 秒情绪曲线</h3>
-                            <span class="chart-subtitle">Valence / Arousal 双折线</span>
+                            <span class="chart-subtitle">Valence 愉悦度 / Arousal 激活度</span>
                         </div>
                         <div id="line-chart" class="chart-surface"></div>
                     </article>

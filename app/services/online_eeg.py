@@ -23,6 +23,9 @@ class OnlineEEGSettings:
     window_seconds: float = 4.0
     tick_seconds: float = 1.0
     smoothing_alpha: float = 0.25
+    stale_after_seconds: float = 2.5
+    live_frame_ttl_seconds: float = 3.0
+    stale_log_interval_seconds: float = 10.0
 
 
 @dataclass
@@ -33,8 +36,17 @@ class OnlineEEGState:
     message: str = "Online EEG service is idle."
     last_frame: dict | None = None
     last_error: str | None = None
+    last_data_at: float | None = None
+    last_publish_at: float | None = None
+    stale_seconds: float | None = None
+    sample_count: int | None = None
+    consecutive_stale_count: int = 0
     started_at: float | None = None
     settings: OnlineEEGSettings = field(default_factory=OnlineEEGSettings)
+
+
+class StaleEEGError(RuntimeError):
+    pass
 
 
 class OnlineEmotionService:
@@ -57,6 +69,7 @@ class OnlineEmotionService:
         self.recorder_factory = recorder_factory
         self.logger = logger or logging.getLogger("online-eeg")
         self.settings = OnlineEEGSettings()
+        self.stream_hub.live_frame_ttl_seconds = self.settings.live_frame_ttl_seconds
         self.state = OnlineEEGState(settings=self.settings)
         self._task: asyncio.Task | None = None
         self._recorder = None
@@ -64,6 +77,9 @@ class OnlineEmotionService:
         self._metadata: dict | None = None
         self._device = None
         self._smoothed: dict[str, float] = {}
+        self._last_sample_count: int | None = None
+        self._was_stale = False
+        self._last_stale_log_at = 0.0
 
     async def start(self) -> dict:
         if self.state.running:
@@ -84,6 +100,14 @@ class OnlineEmotionService:
         self.state.started_at = time.time()
         self.state.status = "running"
         self.state.message = "Online EEG service is running."
+        self.state.last_data_at = None
+        self.state.last_publish_at = None
+        self.state.stale_seconds = None
+        self.state.sample_count = None
+        self.state.consecutive_stale_count = 0
+        self._last_sample_count = None
+        self._was_stale = False
+        self._last_stale_log_at = 0.0
         self._task = asyncio.create_task(self._run_loop())
         return self.snapshot()
 
@@ -104,6 +128,10 @@ class OnlineEmotionService:
         self.state.running = False
         self.state.status = "idle"
         self.state.message = "Online EEG service is stopped."
+        self.state.stale_seconds = None
+        self.state.consecutive_stale_count = 0
+        self._last_sample_count = None
+        self._was_stale = False
         return self.snapshot()
 
     def snapshot(self) -> dict:
@@ -114,6 +142,11 @@ class OnlineEmotionService:
             "message": self.state.message,
             "last_frame": self.state.last_frame,
             "last_error": self.state.last_error,
+            "last_data_at": self.state.last_data_at,
+            "last_publish_at": self.state.last_publish_at,
+            "stale_seconds": self.state.stale_seconds,
+            "sample_count": self.state.sample_count,
+            "consecutive_stale_count": self.state.consecutive_stale_count,
             "started_at": self.state.started_at,
             "settings": self.settings.__dict__,
             "model_dir": str(self.model_dir),
@@ -189,6 +222,8 @@ class OnlineEmotionService:
         config = load_config(self.config_path)
         while True:
             try:
+                freshness = self._get_recorder_freshness()
+                self._assert_fresh(freshness)
                 raw_window = await asyncio.to_thread(self._recorder.get_record, self.settings.window_seconds)
                 processed = preprocess_online_eeg_window(
                     raw_window,
@@ -204,14 +239,107 @@ class OnlineEmotionService:
                 }
                 await self.stream_hub.publish(frame, source="live")
                 self.state.last_frame = {**frame, "source": "live"}
+                self.state.last_publish_at = time.time()
                 self.state.status = "running"
                 self.state.message = "Online EEG frame published."
                 self.state.last_error = None
+                self.state.stale_seconds = 0.0
+                self.state.consecutive_stale_count = 0
+                self._last_sample_count = self.state.sample_count
+                if self._was_stale:
+                    self.logger.info("online_eeg_recovered sample_count=%s", self.state.sample_count)
+                self._was_stale = False
+            except StaleEEGError as exc:
+                self.state.status = "stale_eeg"
+                self.state.message = f"EEG data stream is stale; waiting for new samples: {exc}"
+                self.state.last_error = str(exc)
+                self.state.consecutive_stale_count += 1
+                self._log_stale_event(str(exc))
             except Exception as exc:
                 self.state.status = "waiting_for_valid_eeg"
                 self.state.message = f"Waiting for valid EEG: {exc}"
                 self.state.last_error = str(exc)
             await asyncio.sleep(self.settings.tick_seconds)
+
+    def _get_recorder_freshness(self) -> dict:
+        if self._recorder is None:
+            raise StaleEEGError("recorder is not initialized")
+        if hasattr(self._recorder, "get_freshness_info"):
+            freshness = self._recorder.get_freshness_info()
+        elif hasattr(self._recorder, "server") and hasattr(self._recorder.server, "GetFreshnessInfo"):
+            freshness = self._recorder.server.GetFreshnessInfo()
+        else:
+            freshness = {}
+        sample_count = freshness.get("sample_count")
+        if sample_count is not None:
+            sample_count = int(sample_count)
+        last_packet_at = freshness.get("last_packet_at")
+        self.state.sample_count = sample_count
+        self.state.last_data_at = float(last_packet_at) if last_packet_at is not None else None
+        if self.state.last_data_at is None:
+            self.state.stale_seconds = None
+        else:
+            self.state.stale_seconds = round(max(0.0, time.time() - self.state.last_data_at), 3)
+        return freshness
+
+    def _assert_fresh(self, freshness: dict) -> None:
+        sample_count = self.state.sample_count
+        last_packet_at = self.state.last_data_at
+        connected = freshness.get("connected")
+        recorder_error = freshness.get("last_error")
+        expected_samples = int(self.settings.window_seconds * self.settings.srate)
+        now = time.time()
+
+        if connected is False:
+            raise StaleEEGError(f"device disconnected ({recorder_error or 'socket not connected'})")
+        if sample_count is None:
+            raise StaleEEGError("recorder does not expose sample_count")
+        if last_packet_at is None:
+            elapsed_since_start = now - self.state.started_at if self.state.started_at is not None else 0.0
+            if elapsed_since_start <= self.settings.stale_after_seconds:
+                raise RuntimeError("waiting for first EEG packet")
+            raise StaleEEGError("no EEG packets have been received")
+        stale_seconds = now - last_packet_at
+        self.state.stale_seconds = round(max(0.0, stale_seconds), 3)
+        if stale_seconds > self.settings.stale_after_seconds:
+            raise StaleEEGError(
+                f"last packet is {stale_seconds:.2f}s old; threshold is {self.settings.stale_after_seconds:.2f}s"
+            )
+        if sample_count < expected_samples:
+            raise RuntimeError(f"waiting for enough samples ({sample_count}/{expected_samples})")
+        if self._last_sample_count is not None and sample_count <= self._last_sample_count:
+            raise StaleEEGError(
+                f"sample_count did not increase ({sample_count} <= {self._last_sample_count})"
+            )
+
+    def _log_stale_event(self, reason: str) -> None:
+        now = time.time()
+        event_name = (
+            "online_eeg_device_disconnected"
+            if reason.startswith("device disconnected")
+            else "online_eeg_stale_detected"
+        )
+        if not self._was_stale:
+            self.logger.warning(
+                "%s reason=%s sample_count=%s stale_seconds=%s",
+                event_name,
+                reason,
+                self.state.sample_count,
+                self.state.stale_seconds,
+            )
+            self._was_stale = True
+            self._last_stale_log_at = now
+            return
+        if now - self._last_stale_log_at >= self.settings.stale_log_interval_seconds:
+            self.logger.warning(
+                "%s reason=%s sample_count=%s stale_seconds=%s consecutive=%s",
+                event_name,
+                reason,
+                self.state.sample_count,
+                self.state.stale_seconds,
+                self.state.consecutive_stale_count,
+            )
+            self._last_stale_log_at = now
 
     def _predict_scores(self, processed_window) -> dict[str, float]:
         import torch

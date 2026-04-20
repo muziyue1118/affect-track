@@ -8,7 +8,9 @@
         eegStatusTimer: null,
         lineChart: null,
         scatterChart: null,
+        chartResizeObserver: null,
         series: [],
+        eegStale: false,
     };
 
     const ui = {
@@ -126,13 +128,13 @@
             },
             legend: {
                 top: 6,
-                data: ["Valence", "Arousal"],
+                data: ["Valence 愉悦度", "Arousal 激活度"],
             },
             grid: {
-                top: 48,
-                right: 18,
-                bottom: 28,
-                left: 42,
+                top: 52,
+                right: 24,
+                bottom: 34,
+                left: 48,
             },
             xAxis: {
                 type: "time",
@@ -149,7 +151,7 @@
             },
             series: [
                 {
-                    name: "Valence",
+                    name: "Valence 愉悦度",
                     type: "line",
                     smooth: true,
                     showSymbol: false,
@@ -158,7 +160,7 @@
                     data: [],
                 },
                 {
-                    name: "Arousal",
+                    name: "Arousal 激活度",
                     type: "line",
                     smooth: true,
                     showSymbol: false,
@@ -173,21 +175,21 @@
             backgroundColor: "transparent",
             animationDurationUpdate: 180,
             grid: {
-                top: 24,
-                right: 24,
-                bottom: 42,
-                left: 46,
+                top: 26,
+                right: 34,
+                bottom: 48,
+                left: 54,
             },
             xAxis: {
                 type: "value",
-                name: "Valence",
+                name: "Valence 愉悦度",
                 min: 1,
                 max: 5,
                 splitNumber: 4,
             },
             yAxis: {
                 type: "value",
-                name: "Arousal",
+                name: "Arousal 激活度",
                 min: 1,
                 max: 5,
                 splitNumber: 4,
@@ -207,10 +209,18 @@
             ],
         });
 
-        window.addEventListener("resize", () => {
+        const resizeCharts = () => {
             state.lineChart?.resize();
             state.scatterChart?.resize();
-        });
+        };
+        window.addEventListener("resize", resizeCharts);
+        if (window.ResizeObserver) {
+            state.chartResizeObserver = new ResizeObserver(() => {
+                window.requestAnimationFrame(resizeCharts);
+            });
+            state.chartResizeObserver.observe(ui.lineChart);
+            state.chartResizeObserver.observe(ui.scatterChart);
+        }
     }
 
     function updateCharts(frame) {
@@ -328,8 +338,28 @@
     }
 
     function renderEegStatus(status) {
-        const prefix = status.running ? "EEG：运行中" : status.model_ready ? "EEG：模型就绪" : "EEG：未就绪";
-        ui.eegStatusPill.textContent = `${prefix} · ${status.status || "unknown"}`;
+        const statusCode = status.status || "unknown";
+        const eegStale = statusCode === "stale_eeg";
+        const stale = eegStale && state.activeMode === "live";
+        const staleSeconds = Number(status.stale_seconds || 0);
+        document.body.classList.toggle("is-live-stale", stale);
+        if (eegStale) {
+            ui.eegStatusPill.textContent = `EEG：数据断流 · ${staleSeconds.toFixed(1)}s 未更新`;
+            if (stale) {
+                ui.streamPill.textContent = "Live 数据已过期 · 等待新 EEG";
+            }
+            if (stale && !state.eegStale) {
+                setStatus("EEG 数据已断流，界面已冻结最后一次有效预测，正在等待新数据。", "warning");
+            }
+            state.eegStale = stale;
+        } else {
+            const prefix = status.running ? "EEG：运行中" : status.model_ready ? "EEG：模型就绪" : "EEG：未就绪";
+            ui.eegStatusPill.textContent = `${prefix} · ${statusCode}`;
+            if (state.eegStale && statusCode === "running") {
+                setStatus("EEG 数据流已恢复，live 预测继续更新。", "success");
+            }
+            state.eegStale = false;
+        }
         ui.startEeg.disabled = Boolean(status.running);
         ui.stopEeg.disabled = !status.running;
     }

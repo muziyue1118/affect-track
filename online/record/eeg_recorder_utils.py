@@ -41,6 +41,9 @@ class DataServerThread(Thread,):
         self.n_chan = n_chan
         self.srate = srate
         self.t_buffer = t_buffer
+        self.last_packet_at = None
+        self.connected = False
+        self.last_error = None
 
     def connect(self,hostname='127.0.0.1', port= 8712):
         """
@@ -55,12 +58,17 @@ class DataServerThread(Thread,):
             try:
                 self.sock.connect((self.hostname, self.port))
                 notconnect = False
+                self.connected = True
+                self.last_error = None
             except:
                 reconnecttime += 1
                 print('connection failed, retrying for %d times' % reconnecttime)
                 time.sleep(1)
                 if reconnecttime > 2:
                     break
+        if notconnect:
+            self.connected = False
+            self.last_error = 'connection_failed'
         self.shutdown_flag = Event()
         self.shutdown_flag.set()
         self.sock.setblocking(True)
@@ -87,16 +95,31 @@ class DataServerThread(Thread,):
                     break
                 try:
                     raw = r.recv(self.bufsize)
-                except:
+                except Exception as exc:
                     print('can not recieve socket ...')
+                    self.connected = False
+                    self.last_error = str(exc)
                     socket_lock.release()
                     self.sock.close()
+                    self.sock = None
+                    break
                 else:
+                    if not raw:
+                        self.connected = False
+                        self.last_error = 'socket_closed'
+                        socket_lock.release()
+                        self.sock.close()
+                        self.sock = None
+                        break
                     raw = self.buffer + raw
                     data, evt = self.parseData(raw) ## parse data
                     socket_lock.release()
-                    data = data.reshape(len(data) // (self.n_chan), self.n_chan)
-                    self.ringBuffer.appendBuffer(data.T)
+                    if len(data) > 0:
+                        data = data.reshape(len(data) // (self.n_chan), self.n_chan)
+                        self.ringBuffer.appendBuffer(data.T)
+                        self.last_packet_at = time.time()
+                        self.connected = True
+                        self.last_error = None
                     # print(self.ringBuffer.nUpdate)
 
                     # if len(data) > 0:
@@ -241,6 +264,14 @@ class DataServerThread(Thread,):
     def GetDataLenCount(self):
         return self.ringBuffer.nUpdate
 
+    def GetFreshnessInfo(self):
+        return {
+            "connected": self.connected,
+            "last_packet_at": self.last_packet_at,
+            "sample_count": self.ringBuffer.nUpdate,
+            "last_error": self.last_error,
+        }
+
     # reset current update point
     def ResetDataLenCount(self, count=0):
         self.ringBuffer.nUpdate = count
@@ -255,6 +286,7 @@ class DataServerThread(Thread,):
     # stop/close thread
     def stop(self):
         self.shutdown_flag.clear()
+        self.connected = False
 
 
 class EEGRecorder: #127.0.0.1
@@ -266,7 +298,9 @@ class EEGRecorder: #127.0.0.1
         self.srate = srate
 
     def start(self):
-        self.server.connect(self.host, self.port)
+        notconnect = self.server.connect(self.host, self.port)
+        if notconnect:
+            raise ConnectionError(f"Failed to connect EEG data server at {self.host}:{self.port}")
         self.server.start()
 
     def stop(self):
@@ -278,6 +312,9 @@ class EEGRecorder: #127.0.0.1
         eeg = self.server.GetBufferData()[0]
         eeg = eeg[:-1]  # Remove the TRG channel
         return eeg[..., -frame:]
+
+    def get_freshness_info(self):
+        return self.server.GetFreshnessInfo()
 
 if __name__ == "__main__":
     device = EEGRecorder(64, 1000)

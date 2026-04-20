@@ -13,15 +13,17 @@ EmotionMode = Literal["mock", "live"]
 class EmotionStreamHub:
     def __init__(self) -> None:
         self.mode: EmotionMode = "mock"
+        self.live_frame_ttl_seconds: float = 3.0
         self._clients: set[WebSocket] = set()
         self._lock = asyncio.Lock()
         self._latest_by_source: dict[EmotionMode, dict] = {}
+        self._latest_at_by_source: dict[EmotionMode, float] = {}
 
     async def connect(self, websocket: WebSocket) -> None:
         await websocket.accept()
         async with self._lock:
             self._clients.add(websocket)
-            latest_frame = self._latest_by_source.get(self.mode)
+            latest_frame = self._latest_frame_if_fresh(self.mode)
         if latest_frame:
             await websocket.send_json(latest_frame)
 
@@ -31,7 +33,7 @@ class EmotionStreamHub:
 
     async def set_mode(self, mode: EmotionMode) -> None:
         self.mode = mode
-        latest_frame = self._latest_by_source.get(mode)
+        latest_frame = self._latest_frame_if_fresh(mode)
         if latest_frame:
             await self._broadcast(latest_frame)
 
@@ -43,16 +45,36 @@ class EmotionStreamHub:
             "source": source,
         }
         self._latest_by_source[source] = payload
+        self._latest_at_by_source[source] = time.monotonic()
         if self.mode == source:
             await self._broadcast(payload)
 
     def snapshot(self) -> dict:
+        live_frame_age = self._frame_age_seconds("live")
         return {
             "mode": self.mode,
             "connected_clients": len(self._clients),
             "has_mock_frame": "mock" in self._latest_by_source,
             "has_live_frame": "live" in self._latest_by_source,
+            "live_frame_age_seconds": live_frame_age,
+            "live_frame_is_fresh": live_frame_age is not None and live_frame_age <= self.live_frame_ttl_seconds,
         }
+
+    def _frame_age_seconds(self, source: EmotionMode) -> float | None:
+        latest_at = self._latest_at_by_source.get(source)
+        if latest_at is None:
+            return None
+        return round(time.monotonic() - latest_at, 3)
+
+    def _latest_frame_if_fresh(self, source: EmotionMode) -> dict | None:
+        latest_frame = self._latest_by_source.get(source)
+        if latest_frame is None:
+            return None
+        if source == "live":
+            latest_at = self._latest_at_by_source.get(source)
+            if latest_at is None or time.monotonic() - latest_at > self.live_frame_ttl_seconds:
+                return None
+        return latest_frame
 
     async def _broadcast(self, payload: dict) -> None:
         async with self._lock:
