@@ -1,39 +1,64 @@
-﻿# 情感诱发系统
+# AffectTrack 情绪诱发与 EEG 情绪识别系统
 
-一个基于 FastAPI 的本机单机情绪诱发系统，包含离线数据采集页和在线情绪演示页。
+一个本机运行的情绪诱发实验系统，包含离线视频诱发采集、在线情绪演示看板、EEG 离线分析流水线，以及基于实时 EEG 的 Valence/Arousal 在线预测服务。
 
-## 目录说明
+## 功能概览
 
-- `app/`: 后端入口、数据模型与服务层
-- `templates/`: 离线采集页和在线演示页
-- `static/`: CSS、原生 JavaScript 和本地前端资源
-- `video/`: 实验视频目录，只识别 `positive_1.mp4` 这类命名规范
-- `data/`: 离线评分 CSV 输出目录
-- `tests/`: 单元测试和 API 测试
+- 离线采集：按随机顺序播放 `positive / neutral / negative` 视频，播放结束后记录 Valence 和 Arousal 评分，并立即写入 CSV。
+- 在线演示：左侧播放视频，右侧展示 Valence/Arousal 动态进度条、最近 30 秒曲线和二维情绪坐标。
+- EEG 分析：支持 BDF 审计、预处理、PSD/DE 特征、传统机器学习模型、深度学习模型、LOSO 和单被试实验。
+- 在线 EEG 推理：使用全部已对齐数据训练 Valence/Arousal 二分类部署模型，连接 Neuracle 数据流后实时推送结果到在线看板。
 
-## 运行前准备
+## 目录结构
 
-1. 将 `video/` 内视频统一重命名为以下形式：
-   - `positive_1.mp4`
-   - `neutral_1.mp4`
-   - `negative_1.mp4`
-2. 当前仓库中的 `1.mp4`、`2.mp4`、`3.mp4` 不会被系统识别，这是有意为之，用来避免错误分类。
-3. 本地版 `ECharts` 已经放在 `static/vendor/echarts.min.js`，在线演示页无需再依赖公网 CDN。
+- `app/`：FastAPI 后端、API、数据保存、视频目录扫描、实时情绪流和在线 EEG 服务。
+- `templates/`：离线采集页和在线演示页。
+- `static/`：CSS、原生 JavaScript、本地 ECharts。
+- `video/`：实验视频目录，只识别规范命名的视频。
+- `pics/`：在线看板使用的情绪图标。
+- `online/`：实时 EEG 设备接收相关代码，当前默认复用 Neuracle TCP 数据流。
+- `analysis/`：EEG 审计、预处理、特征提取、模型注册、训练与部署训练代码。
+- `scripts/`：常用 EEG 实验脚本。
+- `data/`：离线评分 CSV 和 EEG 数据目录，默认不提交到 Git。
+- `models/emotion_online/`：在线 Valence/Arousal 部署模型输出目录。
+- `outputs/`：EEG 实验输出目录，默认不提交到 Git。
+- `tests/`：单元测试和 API 测试。
 
-## Conda 环境
+## 快速开始
+
+### 1. 准备视频
+
+把实验视频放入 `video/`，并使用以下命名规则：
+
+```text
+positive_1.mp4
+positive_2.mp4
+neutral_1.mp4
+negative_1.mp4
+```
+
+系统只接受：
+
+```text
+^(positive|neutral|negative)_(数字).mp4$
+```
+
+例如 `1.mp4`、`happy.mp4` 这类文件不会进入正式实验列表，这是为了避免类别误配。
+
+### 2. 创建网页系统环境
 
 ```powershell
 conda env create -f environment.yml
 conda activate emotion-induction
 ```
 
-如果你更习惯直接安装：
+也可以直接使用 pip：
 
 ```powershell
 pip install -r requirements.txt
 ```
 
-## 启动方式
+### 3. 启动网页系统
 
 ```powershell
 uvicorn app.main:app --reload
@@ -41,30 +66,64 @@ uvicorn app.main:app --reload
 
 启动后访问：
 
-- 离线采集页: `http://127.0.0.1:8000/offline`
-- 在线演示页: `http://127.0.0.1:8000/online`
-- 健康检查: `http://127.0.0.1:8000/api/health`
+- 离线采集页：`http://127.0.0.1:8000/offline`
+- 在线演示页：`http://127.0.0.1:8000/online`
+- 健康检查：`http://127.0.0.1:8000/api/health`
 
-## 实时接口
+## 离线数据采集
 
-### 保存离线评分
+1. 打开 `http://127.0.0.1:8000/offline`。
+2. 输入受试者编号，例如 `sub3`。
+3. 点击开始实验，前端会拉取视频列表并随机打乱播放顺序。
+4. 视频播放阶段会进入沉浸式全屏，隐藏控制条和干扰信息。
+5. 每个视频结束后填写 Valence 和 Arousal，范围为 `1-5` 整数。
+6. 两个滑块都被实际触摸后才能提交。
+7. 提交成功后进入 10 秒休息页，然后自动播放下一段视频。
+8. 全部视频结束后显示实验结束。
 
-`POST /api/save_score`
+评分数据写入：
 
-```json
-{
-  "subject_id": "SUBJ_001",
-  "video_name": "positive_1.mp4",
-  "start_time": "E202604091935251282",
-  "end_time": "E202604091940251283",
-  "valence": 4,
-  "arousal": 3
-}
+```text
+data/offline_records.csv
 ```
 
-### 推送实时情绪帧
+CSV 包含：
 
-`POST /api/emotion_frame`
+```text
+subject_id,video_name,category,start_time,end_time,valence,arousal,saved_at
+```
+
+## 在线演示
+
+打开：
+
+```text
+http://127.0.0.1:8000/online
+```
+
+在线页面支持两种模式：
+
+- `mock`：后端自动生成平滑模拟 Valence/Arousal 数据，适合展示和前端调试。
+- `live`：接收真实模型或在线 EEG 服务推送的数据。
+
+切换模式的 API：
+
+```http
+GET /api/emotion_mode
+POST /api/emotion_mode
+```
+
+请求示例：
+
+```json
+{"mode": "live"}
+```
+
+也可以手动向后端推送一帧实时情绪数据：
+
+```http
+POST /api/emotion_frame
+```
 
 ```json
 {
@@ -74,141 +133,229 @@ uvicorn app.main:app --reload
 }
 ```
 
-### 切换在线演示模式
+浏览器统一通过 WebSocket 订阅：
 
-- `GET /api/emotion_mode`
-- `POST /api/emotion_mode` with `{"mode":"mock"}` or `{"mode":"live"}`
-
-### 在线 EEG 推理
-
-先用所有已对齐 EEG 数据训练 Valence/Arousal 两个部署模型，评分为 `3` 的中性样本会被剔除，`1/2` 映射为低/负向类，`4/5` 映射为高/正向类：
-
-```powershell
-C:\Users\15043\miniconda3\python.exe -m analysis.online_training train --config analysis/eeg_config.yaml --network FBSTCNet --device cuda --output-dir models/emotion_online
+```text
+/ws/emotion_stream
 ```
 
-训练完成后会生成：
+## 在线 EEG 推理
 
-- `models/emotion_online/valence_fbstcnet.pt`
-- `models/emotion_online/arousal_fbstcnet.pt`
-- `models/emotion_online/metadata.json`
+在线 EEG 推理分两步：先训练部署模型，再在在线页面启动 EEG 服务。
 
-在线页面点击“启动 EEG”后，后端默认连接 Neuracle `127.0.0.1:8712`、32 通道、1000 Hz 数据流；每次取最近 4 秒 EEG，执行 50 Hz notch、1-45 Hz bandpass、200 Hz 重采样、average reference 和每通道窗口 Z-score，然后输出 `1-5` 范围的 Valence/Arousal 并推送到 `/ws/emotion_stream`。
-
-控制接口：
-
-- `POST /api/online_eeg/start`
-- `POST /api/online_eeg/stop`
-- `GET /api/online_eeg/status`
-
-## 测试
-
-```powershell
-pytest
-```
-
-## EEG 分析流水线
-
-采集完成后，可以用独立的 `analysis/` 流水线审计 BDF 与评分标签，并在标签可对齐时运行 EEG 情绪分类。
-
-建议单独创建 EEG 科学计算环境：
+### 1. 创建 EEG 分析环境
 
 ```powershell
 conda env create -f environment_eeg.yml
 conda activate affect-track-eeg
 ```
 
-先运行审计，确认 `data/eeg_data/sub*_E*/data.bdf` 与 `data/offline_records.csv` 能正确对齐：
+如果使用当前 miniconda 环境，并且需要 GPU，请确认 PyTorch 是 CUDA 版：
+
+```powershell
+C:\Users\15043\miniconda3\python.exe -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'NONE')"
+```
+
+### 2. 训练在线部署模型
+
+使用全部有效受试者数据训练 Valence 和 Arousal 两个二分类模型。评分为 `3` 的中性样本会被剔除；`1/2` 映射为低/负向类，`4/5` 映射为高/正向类。
+
+```powershell
+C:\Users\15043\miniconda3\python.exe -m analysis.online_training train --config analysis/eeg_config.yaml --network FBSTCNet --device cuda --output-dir models/emotion_online
+```
+
+输出文件：
+
+```text
+models/emotion_online/valence_fbstcnet.pt
+models/emotion_online/arousal_fbstcnet.pt
+models/emotion_online/metadata.json
+models/emotion_online/report.md
+```
+
+模型输出逻辑：
+
+```text
+probability = sigmoid(logit)
+score = 1 + 4 * probability
+```
+
+因此模型最终显示为 `1-5` 范围的连续 Valence/Arousal 分数。
+
+### 3. 启动实时 EEG 推理
+
+默认设备参数：
+
+```text
+设备协议：Neuracle
+Host：127.0.0.1
+Port：8712
+通道数：32
+原始采样率：1000 Hz
+```
+
+后端每秒取最近 4 秒 EEG，执行：
+
+```text
+average reference
+50 Hz notch
+1-45 Hz bandpass
+resample to 200 Hz
+per-window per-channel z-score
+FBSTCNet Valence/Arousal inference
+```
+
+在在线页面点击“启动 EEG”即可启动。也可以使用 API：
+
+```http
+POST /api/online_eeg/start
+POST /api/online_eeg/stop
+GET /api/online_eeg/status
+```
+
+如果模型文件不存在、设备未连接、窗口信号异常或通道数不匹配，服务会停留在可诊断状态，不会向看板发布伪结果。
+
+## EEG 离线分析
+
+EEG 数据默认放在：
+
+```text
+data/eeg_data/
+```
+
+评分标签默认读取：
+
+```text
+data/offline_records.csv
+```
+
+### 数据审计
+
+```powershell
+C:\Users\15043\miniconda3\python.exe -m analysis.eeg_pipeline audit --config analysis/eeg_config.yaml
+```
+
+审计会检查 BDF、受试者、标签时间、视频开始/结束时间是否能对齐。如果标签无法对齐，训练会被拒绝，避免标签错配。
+
+### 跨个体 LOSO 实验
+
+传统特征模型：
+
+```powershell
+C:\Users\15043\miniconda3\python.exe -m analysis.eeg_pipeline run --config analysis/eeg_config.yaml --task category --split-mode loso --model features --feature-kind all --classifier all
+```
+
+深度模型：
+
+```powershell
+C:\Users\15043\miniconda3\python.exe -m analysis.eeg_pipeline run --config analysis/eeg_config.yaml --task category --split-mode loso --model deep --deep-network FBSTCNet --protocol supervised --input-kind auto --device cuda
+```
+
+### 单被试 leave-one-trial-out 实验
+
+例如只跑 `sub3`：
+
+```powershell
+C:\Users\15043\miniconda3\python.exe -m analysis.eeg_pipeline run --config analysis/eeg_config.yaml --task category --split-mode subject_dependent --subject-key sub3 --model deep --deep-network EEGNet --protocol supervised --input-kind auto --device cuda
+```
+
+`subject_dependent` 当前是严格 leave-one-trial-out：每折留出一个完整视频 trial 做测试，其余 trial 训练。
+
+### 多受试者子集实验
+
+例如只包含 `sub3 sub4 sub5` 做 LOSO：
+
+```powershell
+C:\Users\15043\miniconda3\python.exe -m analysis.eeg_pipeline run --config analysis/eeg_config.yaml --task category --split-mode loso --subject-keys sub3 sub4 sub5 --model deep --deep-network TSception --protocol supervised --input-kind auto --device cuda
+```
+
+### Valence/Arousal 二分类实验
+
+```powershell
+C:\Users\15043\miniconda3\python.exe -m analysis.eeg_pipeline run --config analysis/eeg_config.yaml --task valence_binary --split-mode loso --model features --feature-kind de --classifier rbf_svm
+```
+
+```powershell
+C:\Users\15043\miniconda3\python.exe -m analysis.eeg_pipeline run --config analysis/eeg_config.yaml --task arousal_binary --split-mode loso --model deep --deep-network FBSTCNet --protocol supervised --input-kind auto --device cuda
+```
+
+`valence_binary` 和 `arousal_binary` 会自动剔除评分为 `3` 的样本。
+
+## 常用脚本
+
+仓库提供了一些便捷脚本：
 
 ```powershell
 python scripts\eeg_audit.py
-```
-
-审计通过后运行跨个体分类：
-
-```powershell
 python scripts\eeg_loso_features.py
-```
-
-只运行跨个体 `DE + RBF SVM`：
-
-```powershell
+python scripts\eeg_loso_deep.py
 python scripts\eeg_loso_de_rbf_svm.py
-```
-
-也可以通过参数只跑某一种特征和某一个分类器，避免每次都重新计算 `PSD + DE` 并遍历全部模型：
-
-```powershell
-python -m analysis.eeg_pipeline run --config analysis/eeg_config.yaml --task category --split-mode loso --model features --feature-kind de --classifier rbf_svm
-```
-
-运行不跨个体分类：
-
-```powershell
+python scripts\eeg_loso_eegnet.py
+python scripts\eeg_loso_dgcnn.py
+python scripts\eeg_loso_bidann.py
 python scripts\eeg_subject_dependent_features.py
-```
-
-只运行 `sub3` 的不跨个体分类：
-
-```powershell
 python scripts\eeg_sub3_subject_dependent_features.py
-```
-
-只运行 `sub3` 的窗口级随机打乱 10 折分类：
-
-```powershell
 python scripts\eeg_sub3_window_kfold_features.py
 ```
 
-运行跨个体端到端 deep baseline：
+更推荐在正式实验中使用 `python -m analysis.eeg_pipeline ...`，因为参数更明确、结果目录更容易追踪。
 
-```powershell
-python scripts\eeg_loso_deep.py
+## 预处理默认配置
+
+配置文件：
+
+```text
+analysis/eeg_config.yaml
 ```
 
-深度模型同样支持通过参数选择网络。默认只跑一个指定模型，不会自动遍历全部 LibEER 模型：
+当前默认值：
+
+- `50 Hz notch`
+- `1-45 Hz bandpass`
+- `200 Hz` 降采样
+- `average reference`
+- 丢弃 trial 开头 `30s`
+- 丢弃 trial 结尾 `10s`
+- 保留中间全部可用片段
+- 切成 `4s` 非重叠窗口
+- PSD/DE 特征使用 `delta/theta/alpha/beta/gamma` 五个频带
+
+PSD 和 DE 特征提取前，会对每个受试者的每个 EEG 通道做 z-score。在线部署模型则使用更适合实时场景的“每个 4 秒窗口内每通道 z-score”。
+
+## 测试
+
+运行全部测试：
 
 ```powershell
-python -m analysis.eeg_pipeline run --config analysis/eeg_config.yaml --task category --split-mode loso --model deep --deep-network shallow_convnet
+C:\Users\15043\miniconda3\python.exe -m pytest -q
 ```
 
-GPU 运行说明：
+当前测试覆盖：
 
-- `analysis/eeg_config.yaml` 中的 `models.deep_device: auto` 会在 CUDA 可用时自动使用 GPU，否则回退 CPU。
-- 命令行可以覆盖配置，例如追加 `--device cuda`、`--device cuda:0` 或 `--device cpu`。
-- 如果当前安装的是 CPU 版 PyTorch，强制 `--device cuda` 会直接报错；需要先安装 CUDA 版 PyTorch。
+- 视频列表扫描和非法文件忽略
+- 离线评分保存和请求体校验
+- WebSocket 实时帧广播
+- EEG 标签解析、时间戳解析、BDF 审计
+- PSD/DE 特征、split 防泄露
+- Torch 模型注册和基础 forward
+- 在线 EEG 预处理、二分类映射和在线状态接口
 
-LibEER 风格模型已经接入统一入口，`Net.py` 负责注册，具体实现位于 `analysis/libeer_models/`。常见运行方式如下：
+## 数据与 Git 注意事项
 
-```powershell
-# 原始 EEG 窗口模型
-python scripts\eeg_loso_eegnet.py
+默认不建议提交以下内容：
 
-# DE 图特征模型
-python scripts\eeg_loso_dgcnn.py
+- `data/offline_records.csv`
+- `data/eeg_data/`
+- `outputs/`
+- 大型 BDF/FIF/cache 文件
 
-# 需要测试域无标签 X 的 transductive domain adaptation 模型
-python scripts\eeg_loso_bidann.py
+在线部署模型位于 `models/emotion_online/`。如果是私有仓库且需要复现实验演示，可以提交这些模型；如果担心模型包含受试者数据分布信息，也可以只提交训练代码，不提交权重文件。
+
+## 第三方说明
+
+部分深度模型结构参考 LibEER，相关许可说明见：
+
+```text
+THIRD_PARTY_NOTICES.md
 ```
-
-已注册的 Torch 模型包括 `shallow_convnet`、`EEGNet`、`TSception`、`ACRNN`、`FBSTCNet`、`DGCNN`、`GCBNet`、`GCBNet_BLS`、`CDCN`、`DBN`、`HSLT`、`RGNN`、`RGNN_official`、`STRNN`、`CoralDgcnn`、`DannDgcnn`、`BiDANN`、`R2GSTNN`、`MsMDA`、`NSAL_DGAT`、`PRRL`。
-
-协议含义：
-
-- `supervised`: 普通监督训练；按当前设置，deep 模型 early stopping 使用每折测试集作为验证集，报告会显式标注。
-- `source_dg`: 只使用训练 subjects 的 domain label，不读取测试 subject 特征。
-- `transductive_da`: 训练时允许读取测试 subject 的无标签 EEG 特征 `X` 做域对齐，但不读取测试标签 `y`；这类结果不能和严格 supervised LOSO 混为同一种结论。
-
-流水线默认采用 50 Hz notch、1-45 Hz bandpass、200 Hz 降采样、average reference、丢弃 trial 开头 30 秒和结尾 10 秒，并保留中间全部可用片段，再切成 4 秒非重叠窗口。提取 PSD 和 DE 前，会对每个受试者的每个 EEG 通道单独做 z-score 归一化；PSD 和 DE 特征使用 delta/theta/alpha/beta/gamma 五个频带。deep 路径可选择 ShallowConvNet 或 LibEER 风格模型，且 supervised deep 模型的 early stopping 按当前设置直接使用每折测试集作为验证集。所有输出写入 `outputs/eeg_runs/`，原始 BDF 和输出目录默认不会提交到 Git。
-
-如果标签缺少 `end_time`、时间超出 BDF 记录范围，或者没有足够有效 trial，`run` 会拒绝训练，只生成审计报告，避免标签错配和数据泄露。
-
-预处理和特征默认值主要参考 DEAP、SEED-IV 和 DREAMER 这类公开情绪 EEG 数据集的常见设置：DEAP 使用视频诱发和 valence/arousal 评分，SEED-IV 提供 200 Hz、4 秒片段、PSD/DE 五频带特征说明，DREAMER 使用视频诱发后的 valence/arousal/dominance 自评。
-
-## 说明
-
-- 离线采集端会记录每段视频的开始时间和结束时间，并在视频结束后立即保存评分，避免中途退出导致全部数据丢失。
-- 前端时间戳使用 `E + YYYYMMDDHHMMSS + 4位子秒标记` 生成；后端保留 Python 版本生成函数作为格式校验基准。
-- 在线演示页只消费 `/ws/emotion_stream`，未来模型协议变化时建议只改后端适配层。
-
 
