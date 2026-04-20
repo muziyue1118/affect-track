@@ -58,6 +58,8 @@ conda activate emotion-induction
 pip install -r requirements.txt
 ```
 
+`requirements.txt` 已包含网页系统和在线 EEG 推理所需的运行时依赖，包括 `numpy`、`scipy` 和 `torch`。如果另一台设备只做网页展示或在线推理，安装这一组通常就够了；如果还要重新训练模型或跑 EEG 离线分析，请使用下面的 EEG 环境。
+
 ### 3. 启动网页系统
 
 ```powershell
@@ -145,16 +147,34 @@ POST /api/emotion_frame
 
 ### 1. 创建 EEG 分析环境
 
+推荐方式：
+
 ```powershell
 conda env create -f environment_eeg.yml
 conda activate affect-track-eeg
 ```
 
-如果使用当前 miniconda 环境，并且需要 GPU，请确认 PyTorch 是 CUDA 版：
+`environment_eeg.yml` 包含 `mne`、`scikit-learn`、`pandas`、`scipy`、`torch` 和 `pytorch-cuda=12.4`，适合带 NVIDIA GPU 的 Windows 设备。
+
+如果不用 Conda，也可以用 pip 安装完整 EEG 分析依赖：
 
 ```powershell
-C:\Users\15043\miniconda3\python.exe -c "import torch; print(torch.__version__); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'NONE')"
+pip install -r requirements-eeg.txt
 ```
+
+如果需要 CUDA 版 PyTorch，建议在目标设备上额外执行一次官方 CUDA wheel 安装命令，例如 CUDA 12.8 wheel：
+
+```powershell
+python -m pip install --upgrade --force-reinstall torch --index-url https://download.pytorch.org/whl/cu128
+```
+
+安装后确认 PyTorch 和 GPU：
+
+```powershell
+python -c "import torch; print(torch.__version__); print(torch.version.cuda); print(torch.cuda.is_available()); print(torch.cuda.get_device_name(0) if torch.cuda.is_available() else 'NONE')"
+```
+
+如果输出 `torch.cuda.is_available()` 为 `False`，在线推理仍然可以用 CPU 跑，只是启动命令和训练命令里的 `--device cuda` 要改为 `--device cpu` 或 `--device auto`。
 
 ### 2. 训练在线部署模型
 
@@ -172,6 +192,16 @@ models/emotion_online/arousal_fbstcnet.pt
 models/emotion_online/metadata.json
 models/emotion_online/report.md
 ```
+
+模型路径说明：后端不是写死某台电脑上的绝对路径，而是以仓库根目录为基准加载：
+
+```text
+<repo_root>/models/emotion_online/metadata.json
+<repo_root>/models/emotion_online/valence_fbstcnet.pt
+<repo_root>/models/emotion_online/arousal_fbstcnet.pt
+```
+
+因此换到另一台电脑时，只要把整个仓库复制过去，并保证 `models/emotion_online/` 目录里的这三个文件存在，就可以被后端找到。如果模型文件没复制过去，`/api/online_eeg/status` 会显示 `model_missing`。
 
 模型输出逻辑：
 
@@ -358,4 +388,3 @@ C:\Users\15043\miniconda3\python.exe -m pytest -q
 ```text
 THIRD_PARTY_NOTICES.md
 ```
-
