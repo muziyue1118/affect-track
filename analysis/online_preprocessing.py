@@ -47,6 +47,7 @@ def preprocess_online_eeg_window(
     input_sfreq: float,
     config: EEGConfig,
     expected_channels: int = 32,
+    filter_trim_seconds: float = 1.0,
 ):
     """Convert a live EEG buffer to the raw-model deployment tensor.
 
@@ -67,10 +68,6 @@ def preprocess_online_eeg_window(
     if not np.isfinite(data).all():
         raise ValueError("Live EEG window contains NaN or Inf")
 
-    threshold = amplitude_threshold(data, config.preprocessing.reject_amplitude_uv)
-    if float(np.max(np.abs(data))) > threshold:
-        raise ValueError("Live EEG window rejected by amplitude threshold")
-
     if config.preprocessing.reference == "average":
         data = data - data.mean(axis=0, keepdims=True)
 
@@ -90,13 +87,46 @@ def preprocess_online_eeg_window(
         ratio = Fraction(target_sfreq / float(input_sfreq)).limit_denominator(1000)
         data = signal.resample_poly(data, ratio.numerator, ratio.denominator, axis=1).astype("float32", copy=False)
 
-    expected_samples = int(round(float(config.segmentation.window_s) * target_sfreq))
-    if data.shape[1] < expected_samples:
-        raise ValueError(f"Live EEG window too short after resampling: {data.shape[1]} < {expected_samples}")
-    if data.shape[1] > expected_samples:
-        data = data[:, -expected_samples:]
+    data = crop_filter_context_to_model_window(
+        data,
+        sfreq=target_sfreq,
+        model_window_seconds=float(config.segmentation.window_s),
+        filter_trim_seconds=filter_trim_seconds,
+    )
+    threshold = amplitude_threshold(data, config.preprocessing.reject_amplitude_uv)
+    if float(np.max(np.abs(data))) > threshold:
+        raise ValueError("Live EEG window rejected by amplitude threshold")
 
     return normalize_window_zscore(data)
+
+
+def crop_filter_context_to_model_window(
+    data,
+    *,
+    sfreq: float,
+    model_window_seconds: float,
+    filter_trim_seconds: float,
+):
+    import numpy as np
+
+    samples = np.asarray(data, dtype="float32")
+    model_samples = int(round(float(model_window_seconds) * float(sfreq)))
+    trim_samples = int(round(float(filter_trim_seconds) * float(sfreq)))
+    context_samples = model_samples + 2 * trim_samples
+    if model_samples <= 0:
+        raise ValueError("model_window_seconds must be positive")
+    if trim_samples < 0:
+        raise ValueError("filter_trim_seconds must be non-negative")
+    if samples.shape[1] < context_samples:
+        raise ValueError(
+            "Live EEG window too short for filter context after resampling: "
+            f"{samples.shape[1]} < {context_samples}"
+        )
+    if samples.shape[1] > context_samples:
+        samples = samples[:, -context_samples:]
+    if trim_samples == 0:
+        return samples[:, -model_samples:].astype("float32", copy=False)
+    return samples[:, trim_samples : trim_samples + model_samples].astype("float32", copy=False)
 
 
 def amplitude_threshold(data, reject_amplitude_uv: float) -> float:

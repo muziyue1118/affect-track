@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -21,6 +22,8 @@ class OnlineEEGSettings:
     channels: int = 32
     srate: int = 1000
     window_seconds: float = 4.0
+    filter_context_seconds: float = 6.0
+    filter_trim_seconds: float = 1.0
     tick_seconds: float = 1.0
     smoothing_alpha: float = 0.25
     stale_after_seconds: float = 2.5
@@ -36,6 +39,8 @@ class OnlineEEGState:
     message: str = "Online EEG service is idle."
     last_frame: dict | None = None
     last_error: str | None = None
+    last_prediction_debug: dict | None = None
+    last_window_stats: dict | None = None
     last_data_at: float | None = None
     last_publish_at: float | None = None
     stale_seconds: float | None = None
@@ -64,7 +69,10 @@ class OnlineEmotionService:
         self.project_root = project_root
         self.stream_hub = stream_hub
         self.config_path = config_path or project_root / "analysis" / "eeg_config.yaml"
-        self.model_dir = model_dir or project_root / "models" / "emotion_online"
+        self.model_dir = _resolve_model_dir(
+            project_root,
+            model_dir or os.getenv("AFFECT_TRACK_ONLINE_MODEL_DIR") or project_root / "models" / "emotion_online",
+        )
         self.device_request = device
         self.recorder_factory = recorder_factory
         self.logger = logger or logging.getLogger("online-eeg")
@@ -105,9 +113,12 @@ class OnlineEmotionService:
         self.state.stale_seconds = None
         self.state.sample_count = None
         self.state.consecutive_stale_count = 0
+        self.state.last_prediction_debug = None
+        self.state.last_window_stats = None
         self._last_sample_count = None
         self._was_stale = False
         self._last_stale_log_at = 0.0
+        self._smoothed.clear()
         self._task = asyncio.create_task(self._run_loop())
         return self.snapshot()
 
@@ -142,6 +153,8 @@ class OnlineEmotionService:
             "message": self.state.message,
             "last_frame": self.state.last_frame,
             "last_error": self.state.last_error,
+            "last_prediction_debug": self.state.last_prediction_debug,
+            "last_window_stats": self.state.last_window_stats,
             "last_data_at": self.state.last_data_at,
             "last_publish_at": self.state.last_publish_at,
             "stale_seconds": self.state.stale_seconds,
@@ -175,6 +188,7 @@ class OnlineEmotionService:
             self._device = _resolve_device(self.device_request, torch)
             network = str(self._metadata["network"])
             self._models = {}
+            self._smoothed.clear()
             for task in ("valence", "arousal"):
                 artifact = self.model_dir / str(self._metadata["artifacts"][task])
                 checkpoint = torch.load(artifact, map_location=self._device, weights_only=False)
@@ -206,7 +220,7 @@ class OnlineEmotionService:
                 srate=self.settings.srate,
                 host=self.settings.host,
                 port=self.settings.port,
-                t_buffer=max(10, int(self.settings.window_seconds * 3)),
+                t_buffer=max(10, int(self.settings.filter_context_seconds * 3)),
             )
         from online.record.eeg_recorder_utils import EEGRecorder
 
@@ -215,7 +229,7 @@ class OnlineEmotionService:
             srate=self.settings.srate,
             host=self.settings.host,
             port=self.settings.port,
-            t_buffer=max(10, int(self.settings.window_seconds * 3)),
+            t_buffer=max(10, int(self.settings.filter_context_seconds * 3)),
         )
 
     async def _run_loop(self) -> None:
@@ -224,13 +238,23 @@ class OnlineEmotionService:
             try:
                 freshness = self._get_recorder_freshness()
                 self._assert_fresh(freshness)
-                raw_window = await asyncio.to_thread(self._recorder.get_record, self.settings.window_seconds)
+                raw_window = await asyncio.to_thread(self._recorder.get_record, self.settings.filter_context_seconds)
+                raw_stats = _window_stats(raw_window)
+                self.state.last_window_stats = {
+                    "raw": raw_stats,
+                    "processed": None,
+                }
                 processed = preprocess_online_eeg_window(
                     raw_window,
                     input_sfreq=self.settings.srate,
                     config=config,
                     expected_channels=self.settings.channels,
+                    filter_trim_seconds=self.settings.filter_trim_seconds,
                 )
+                self.state.last_window_stats = {
+                    "raw": raw_stats,
+                    "processed": _window_stats(processed),
+                }
                 scores = self._predict_scores(processed)
                 frame = {
                     "timestamp": datetime.now().strftime("%H:%M:%S"),
@@ -287,7 +311,7 @@ class OnlineEmotionService:
         last_packet_at = self.state.last_data_at
         connected = freshness.get("connected")
         recorder_error = freshness.get("last_error")
-        expected_samples = int(self.settings.window_seconds * self.settings.srate)
+        expected_samples = int(self.settings.filter_context_seconds * self.settings.srate)
         now = time.time()
 
         if connected is False:
@@ -346,6 +370,7 @@ class OnlineEmotionService:
 
         tensor = torch.tensor(processed_window[None, :, :], dtype=torch.float32, device=self._device)
         scores: dict[str, float] = {}
+        debug: dict[str, dict[str, float | None]] = {}
         with torch.no_grad():
             for task, model in self._models.items():
                 output = model(tensor)
@@ -353,14 +378,24 @@ class OnlineEmotionService:
                     output = output["logits"]
                 if isinstance(output, tuple):
                     output = output[0]
-                probability = float(torch.sigmoid(output.reshape(-1)[0]).detach().cpu().item())
-                score = probability_to_score(probability)
+                logit = float(output.reshape(-1)[0].detach().cpu().item())
+                probability = float(torch.sigmoid(torch.tensor(logit)).item())
+                raw_score = probability_to_score(probability)
+                score = raw_score
                 previous = self._smoothed.get(task)
                 if previous is not None:
                     alpha = self.settings.smoothing_alpha
                     score = alpha * score + (1.0 - alpha) * previous
                 self._smoothed[task] = score
                 scores[task] = round(score, 3)
+                debug[task] = {
+                    "logit": round(logit, 6),
+                    "probability_high": round(probability, 9),
+                    "raw_score": round(raw_score, 6),
+                    "smoothed_score": round(score, 6),
+                    "previous_smoothed_score": round(previous, 6) if previous is not None else None,
+                }
+        self.state.last_prediction_debug = debug
         return scores
 
 
@@ -371,3 +406,34 @@ def _resolve_device(device: str, torch):
     if resolved.type == "cuda" and not torch.cuda.is_available():
         raise RuntimeError("CUDA was requested, but PyTorch cannot use CUDA in this environment.")
     return resolved
+
+
+def _resolve_model_dir(project_root: Path, model_dir: str | Path) -> Path:
+    path = Path(model_dir)
+    if path.is_absolute():
+        return path
+    return project_root / path
+
+
+def _window_stats(window) -> dict[str, float | list[int]]:
+    import numpy as np
+
+    data = np.asarray(window, dtype="float32")
+    finite = data[np.isfinite(data)]
+    if finite.size == 0:
+        return {
+            "shape": list(data.shape),
+            "finite_ratio": 0.0,
+            "abs_max": float("nan"),
+            "abs_p99": float("nan"),
+            "mean": float("nan"),
+            "std": float("nan"),
+        }
+    return {
+        "shape": list(data.shape),
+        "finite_ratio": round(float(finite.size / data.size), 6) if data.size else 0.0,
+        "abs_max": round(float(np.max(np.abs(finite))), 6),
+        "abs_p99": round(float(np.percentile(np.abs(finite), 99)), 6),
+        "mean": round(float(np.mean(finite)), 6),
+        "std": round(float(np.std(finite)), 6),
+    }

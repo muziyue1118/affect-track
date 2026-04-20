@@ -39,9 +39,9 @@ def test_live_frame_cache_expires_for_new_websocket_connections() -> None:
 
 def test_online_service_rejects_unchanged_sample_count() -> None:
     service = OnlineEmotionService(project_root=Path("."), stream_hub=EmotionStreamHub())
-    service.state.sample_count = 4000
+    service.state.sample_count = 6000
     service.state.last_data_at = time.time()
-    service._last_sample_count = 4000
+    service._last_sample_count = 6000
 
     with pytest.raises(StaleEEGError, match="sample_count did not increase"):
         service._assert_fresh({"connected": True})
@@ -63,3 +63,11 @@ def test_online_service_waits_for_initial_window_without_stale_alarm() -> None:
 
     with pytest.raises(RuntimeError, match="waiting for enough samples"):
         service._assert_fresh({"connected": True})
+
+
+def test_online_model_dir_can_be_selected_by_environment(monkeypatch) -> None:
+    project_root = Path("project-root")
+    monkeypatch.setenv("AFFECT_TRACK_ONLINE_MODEL_DIR", "models/emotion_online_sub3_tsception")
+    service = OnlineEmotionService(project_root=project_root, stream_hub=EmotionStreamHub())
+
+    assert service.model_dir == project_root / "models" / "emotion_online_sub3_tsception"

@@ -3,6 +3,7 @@ import pytest
 
 from analysis.config import EEGConfig
 from analysis.online_preprocessing import (
+    crop_filter_context_to_model_window,
     normalize_window_zscore,
     preprocess_online_eeg_window,
     probability_to_score,
@@ -38,10 +39,33 @@ def test_preprocess_online_eeg_window_outputs_raw_model_shape() -> None:
     pytest.importorskip("scipy")
     config = EEGConfig()
     rng = np.random.default_rng(42)
-    raw = rng.normal(0, 10.0, size=(32, 4000)).astype("float32")
+    raw = rng.normal(0, 10.0, size=(32, 6000)).astype("float32")
 
     processed = preprocess_online_eeg_window(raw, input_sfreq=1000, config=config, expected_channels=32)
 
     assert processed.shape == (32, 800)
     assert np.isfinite(processed).all()
     assert np.allclose(processed.mean(axis=1), 0, atol=1e-5)
+
+
+def test_preprocess_online_eeg_window_rejects_short_filter_context() -> None:
+    pytest.importorskip("scipy")
+    config = EEGConfig()
+    raw = np.zeros((32, 4000), dtype="float32")
+
+    with pytest.raises(ValueError, match="too short for filter context"):
+        preprocess_online_eeg_window(raw, input_sfreq=1000, config=config, expected_channels=32)
+
+
+def test_crop_filter_context_to_model_window_keeps_middle_four_seconds() -> None:
+    data = np.arange(1200, dtype="float32")[None, :]
+
+    cropped = crop_filter_context_to_model_window(
+        data,
+        sfreq=200,
+        model_window_seconds=4,
+        filter_trim_seconds=1,
+    )
+
+    assert cropped.shape == (1, 800)
+    assert np.array_equal(cropped[0], np.arange(200, 1000, dtype="float32"))
